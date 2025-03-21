@@ -7,6 +7,7 @@ import nibabel as nib
 from totalsegmentator.python_api import totalsegmentator
 from slicer.ScriptedLoadableModule import *
 import qt, ctk
+import threading
 
 
 class FemoralHeadFitting(ScriptedLoadableModule):
@@ -52,14 +53,20 @@ class FemoralHeadFittingWidget(ScriptedLoadableModuleWidget):
         self.fiducialNode = None
 
     def segmentFemur(self):
-        """Segments the femur using TotalSegmentator."""
+        """Triggers femur segmentation in a background thread."""
         input_path = "C:\\Users\\paula\\OneDrive\\Desktop\\dataset6_CLINIC_0001_data.nii.gz"
+        print("Got the input")
+
+        # Run in a separate thread to prevent UI freeze
+        threading.Thread(target=self.runSegmentation, args=(input_path,)).start()
+
+    def runSegmentation(self, input_path):
         success, output_path = self.logic.segmentFemur(input_path)
 
         if success:
             slicer.util.infoDisplay(f"✅ Segmentation completed. Output saved at {output_path}")
         else:
-            slicer.util.errorDisplay(f"❌ Error during segmentation: {output_path}")
+            slicer.util.errorDisplay(f"❌ Error during segmentation")
 
     def placeFiducialPoints(self):
         """Enables fiducial point placement in Slicer."""
@@ -109,16 +116,25 @@ class FemoralHeadFittingLogic:
         self.sphereRadius = None
 
     def segmentFemur(self, input_path):
-        """Runs TotalSegmentator for femur segmentation."""
+        """Runs TotalSegmentator for femur segmentation asynchronously."""
         output_path = os.path.join(slicer.app.temporaryPath, "segmented_femur.nii.gz")
 
         try:
-            input_img = nib.load(input_path)
-            output_img = totalsegmentator(input_img, task="bones") #, structures=["femur", "pelvis"]
-            nib.save(output_img, output_path)
+            print("Starting segmentation...")
+            totalsegmentator(input_path, output_path, task="bones",fast=True)  # Correct function call
+            print("Segmentation complete, saving output")
             return True, output_path
         except Exception as e:
-            return False, str(e)
+            slicer.util.errorDisplay(f"Segmentation failed: {str(e)}")  # Display error
+            return False, None
+
+    def runSegmentation(self, input_path):
+        success, output_path = self.logic.segmentFemur(input_path)
+
+        if success:
+            slicer.util.infoDisplay(f"✅ Segmentation completed. Output saved at {output_path}")
+        else:
+            slicer.util.errorDisplay(f"❌ Error during segmentation")
 
     def computeSphere(self, center, surfacePoint):
         """Computes sphere parameters from two fiducial points."""
